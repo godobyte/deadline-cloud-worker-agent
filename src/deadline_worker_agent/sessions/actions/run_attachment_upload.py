@@ -66,7 +66,7 @@ class AttachmentUploadAction(OpenjdAction):
         self._logger = LoggerAdapter(OPENJD_LOG, extra={"session_id": session_id})
 
     def set_step_script(
-        self, manifest_paths_by_root: dict[str, str], s3_settings: JobAttachmentS3Settings
+        self, manifest_paths_by_root: dict[str, list[str]], s3_settings: JobAttachmentS3Settings
     ) -> None:
         """Sets the step script for the action
 

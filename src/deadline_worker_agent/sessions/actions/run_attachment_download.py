@@ -275,8 +275,10 @@ class AttachmentDownloadAction(OpenjdAction):
         manifest_paths_by_root = session._asset_sync._check_and_write_local_manifests(
             merged_manifests_by_root=merged_manifests_by_root,
             manifest_write_dir=str(session.working_directory),
+            manifest_name_suffix="step" if self._step_details else "job",
         )
-        session.manifest_paths_by_root = manifest_paths_by_root
+        # Set the manifests by root mapping to session for attachment upload to determine output
+        [session.add_manifest_path(root=r, path=m) for r, m in manifest_paths_by_root.items()]
 
         self.set_step_script(
             manifests=manifest_paths_by_root.values(),  # type: ignore
