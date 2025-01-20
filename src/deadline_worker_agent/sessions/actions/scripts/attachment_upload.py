@@ -45,8 +45,6 @@ def merge(manifest_paths_by_root: dict[str, list[str]]) -> dict[str, str]:
     merged_manifests = dict()
 
     for root, paths in manifest_paths_by_root.items():
-        print(f"Generating merged manifest for {root} and {paths}...")
-
         if len(paths) == 1:
             merged_manifests[root] = paths[0]
         else:
@@ -107,7 +105,7 @@ def main(args=None):
     manifests = snapshot(manifest_path_by_root=manifest_path_by_root)
 
     if manifests:
-        print("Starting upload...")
+        print("\nStarting upload...")
         upload(
             manifests=manifests,
             s3_root_uri=parsed_args.s3_uri,
@@ -117,7 +115,7 @@ def main(args=None):
         total = time.perf_counter() - start_time
         print(f"Finished uploading after {total} seconds")
     else:
-        print("No output to upload")
+        print("\nNo output to upload")
 
 
 if __name__ == "__main__":

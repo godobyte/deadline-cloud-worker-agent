@@ -94,37 +94,6 @@ class TestAttachmentUpload:
             path_mapping_rules=path_mapping_file_path,
         )
 
-    # @patch("deadline_worker_agent.sessions.actions.scripts.attachment_upload._manifest_merge")
-    # @patch("deadline_worker_agent.sessions.actions.scripts.attachment_upload._manifest_snapshot")
-    # @patch("deadline_worker_agent.sessions.actions.scripts.attachment_upload.attachment_upload")
-    # def test_main_with_manifests(
-    #     self, mock_upload: Mock, mock_snapshot: Mock, mock_merge: Mock, path_mapping_file_path: str, valid_args: dict
-    # ):
-    #     # Setup mock for merge to return some manifests
-    #     mock_merge.return_value = {"root1": "/path/to/manifest1"}
-
-    #     # Setup mock for snapshot to return some manifests
-    #     mock_snapshot.return_value = ["manifest1", "manifest2"]
-
-    #     # Run main with test arguments
-    #     main(valid_args)
-
-    #     mock_merge.assert_called_once_with(
-    #         manifest_paths_by_root={"root1": ["/path/to/manifest1"]},
-    #     )
-
-    #     # Verify snapshot was called with correct arguments
-    #     mock_snapshot.assert_called_once_with(
-    #         manifest_path_by_root={"root1": "/path/to/manifest1"}
-    #     )
-
-    #     # Verify upload was called with correct arguments
-    #     mock_upload.assert_called_once_with(
-    #         manifests=["manifest1", "manifest2"],
-    #         s3_root_uri="s3://test-bucket/path",
-    #         path_mapping_rules=path_mapping_file_path,
-    #     )
-
     @patch("deadline_worker_agent.sessions.actions.scripts.attachment_upload.merge")
     @patch("deadline_worker_agent.sessions.actions.scripts.attachment_upload.snapshot")
     @patch("deadline_worker_agent.sessions.actions.scripts.attachment_upload.upload")

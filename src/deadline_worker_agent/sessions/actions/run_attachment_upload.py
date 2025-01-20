@@ -144,7 +144,7 @@ class AttachmentUploadAction(OpenjdAction):
             extra={"openjd_log_content": LogContent.BANNER},
         )
         self._logger.info(
-            "--------- AttachmentUploadAction ---------",
+            "--------- Job Attachments Upload for Task",
             extra={"openjd_log_content": LogContent.BANNER},
         )
         self._logger.info(
@@ -179,4 +179,5 @@ class AttachmentUploadAction(OpenjdAction):
                 "DEADLINE_STEP_ID": self._step_id,
                 "DEADLINE_TASK_ID": self._task_id,
             },
+            log_task_banner=False,
         )

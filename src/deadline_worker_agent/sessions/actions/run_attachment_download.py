@@ -164,7 +164,7 @@ class AttachmentDownloadAction(OpenjdAction):
             extra={"openjd_log_content": LogContent.BANNER},
         )
         self._logger.info(
-            f"--------- AttachmentDownloadAction  {section_title}",
+            f"--------- {section_title}",
             extra={"openjd_log_content": LogContent.BANNER},
         )
         self._logger.info(
@@ -288,6 +288,7 @@ class AttachmentDownloadAction(OpenjdAction):
         session.run_task(
             step_script=self._step_script,
             task_parameter_values=dict[str, ParameterValue](),
+            log_task_banner=False,
         )
 
     def _start_vfs(
