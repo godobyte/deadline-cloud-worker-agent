@@ -9,6 +9,8 @@ import json
 import logging
 import os
 import pathlib
+import shlex
+import shutil
 import tempfile
 import time
 import uuid
@@ -20,6 +22,11 @@ import botocore.config
 import pytest
 import xxhash
 from deadline.client import api
+from hypothesis import given, strategies as st, settings, HealthCheck, Verbosity, Phase
+
+# Disable Hypothesis pretty-printing globally
+settings.register_profile("no_print", print_blob=False, verbosity=Verbosity.quiet)
+settings.load_profile("no_print")
 from deadline.client.config import set_setting
 from deadline_test_fixtures import (
     DeadlineClient,
@@ -1981,3 +1988,178 @@ with open(output_path, "w") as f:
             output_root_path=output_root_path,
         )
         assert len(output_path) == 0
+
+    def test_worker_job_attachments_special_characters_in_paths(
+        self,
+        deadline_resources: DeadlineResources,
+        deadline_client: DeadlineClient,
+        asset_sync_class_worker: EC2InstanceWorker,
+        asset_sync_worker_config: DeadlineWorkerConfiguration,
+        tmp_path: pathlib.Path,
+    ) -> None:
+        """
+        Test job attachments with special characters in output directory paths.
+        
+        This test verifies that the glob.escape() fix properly handles square brackets
+        and other special characters in output directory names during attachment upload.
+        """
+        # Create job bundle with special characters in directory names
+        job_bundle_path = os.path.join(tmp_path, "job_bundle_special_chars")
+        os.makedirs(job_bundle_path, exist_ok=True)
+        
+        # Create directories with special characters that could cause glob issues
+        special_dirs = [
+            "[data_]dir",  # Square brackets (the main issue from the bug report)
+            "output{test}",  # Curly braces
+            "files*pattern",  # Asterisk
+            "temp?dir",  # Question mark
+        ]
+        
+        for special_dir in special_dirs:
+            special_path = os.path.join(job_bundle_path, special_dir)
+            os.makedirs(special_path, exist_ok=True)
+            
+            # Create a test file in each special directory
+            test_file = os.path.join(special_path, "test_file.txt")
+            with open(test_file, "w") as f:
+                f.write(f"Content from {special_dir}")
+
+        asset_sync_feature = (
+            asset_sync_worker_config.worker_env_var.get(self.ASSET_SYNC_JOB_USER_FEATURE, "False")
+            if asset_sync_worker_config.worker_env_var
+            else "False"
+        )
+        job_name = f"SpecialCharsJob[asset_sync_feature={asset_sync_feature}]"
+
+        # Create job template that processes files in directories with special characters
+        script_content = (
+            "#!/usr/bin/env bash\n"
+            "echo 'Processing files in directories with special characters'\n"
+            "find {{Param.DataDir}} -name '*.txt' -exec echo 'Found: {}' \\;\n"
+            "# Create output files in each special directory\n"
+            "for dir in {{Param.DataDir}}/*/; do\n"
+            "  if [ -d \"$dir\" ]; then\n"
+            "    echo \"Processed $(basename \"$dir\")\" > \"${dir}/output.txt\"\n"
+            "  fi\n"
+            "done\n"
+            if os.environ["OPERATING_SYSTEM"] == "linux"
+            else (
+                "echo Processing files in directories with special characters\n"
+                "dir {{Param.DataDir}} /s /b *.txt\n"
+                "for /d %%i in ({{Param.DataDir}}\\*) do (\n"
+                "  echo Processed %%~ni > \"%%i\\output.txt\"\n"
+                ")\n"
+            )
+        )
+
+        job_parameters = [
+            {"name": "DataDir", "value": job_bundle_path},
+        ]
+
+        with open(os.path.join(job_bundle_path, "template.json"), "w") as template_file:
+            template_file.write(
+                json.dumps(
+                    {
+                        "specificationVersion": "jobtemplate-2023-09",
+                        "name": job_name,
+                        "parameterDefinitions": [
+                            {
+                                "name": "DataDir",
+                                "type": "PATH",
+                                "dataFlow": "INOUT",
+                            },
+                        ],
+                        "steps": [
+                            {
+                                "name": "ProcessSpecialChars",
+                                "hostRequirements": {
+                                    "attributes": [
+                                        {
+                                            "name": "attr.worker.os.family",
+                                            "allOf": [os.environ["OPERATING_SYSTEM"]],
+                                        }
+                                    ]
+                                },
+                                "script": {
+                                    "actions": {
+                                        "onRun": {"command": "{{ Task.File.runScript }}"}
+                                    },
+                                    "embeddedFiles": [
+                                        {
+                                            "name": "runScript",
+                                            "type": "TEXT",
+                                            "runnable": True,
+                                            "data": script_content,
+                                            **(
+                                                {"filename": "process_special_chars.bat"}
+                                                if os.environ["OPERATING_SYSTEM"] == "windows"
+                                                else {}
+                                            ),
+                                        }
+                                    ],
+                                },
+                            }
+                        ],
+                    }
+                )
+            )
+
+        config = configparser.ConfigParser()
+        set_setting("defaults.farm_id", deadline_resources.farm.id, config)
+        set_setting("defaults.queue_id", deadline_resources.queue_a.id, config)
+
+        job_id = api.create_job_from_job_bundle(
+            job_bundle_path,
+            job_parameters,
+            priority=98,
+            config=config,
+            queue_parameter_definitions=[],
+        )
+        assert job_id is not None
+
+        job_details = Job.get_job_details(
+            client=deadline_client,
+            farm=deadline_resources.farm,
+            queue=deadline_resources.queue_a,
+            job_id=job_id,
+        )
+        job = Job(
+            farm=deadline_resources.farm,
+            queue=deadline_resources.queue_a,
+            template={},
+            **job_details,
+        )
+
+        LOG.info(f"Waiting for job {job.id} with special character paths to complete")
+        job.wait_until_complete(client=deadline_client)
+        LOG.info(f"Job result: {job}")
+
+        # Job should succeed despite special characters in paths
+        assert job.task_run_status == TaskStatus.SUCCEEDED
+
+        # Validate S3 setup and manifest integrity
+        LOG.info(f"Validating S3 setup for job {job.id}")
+        validate_s3_job_output_manifest(
+            job=job,
+            deadline_client=deadline_client,
+        )
+        LOG.info("S3 validation completed successfully")
+
+        # Verify job attachments output with special character directories
+        output_path = wait_for_job_output(
+            job=job, 
+            deadline_client=deadline_client, 
+            deadline_resources=deadline_resources
+        )
+        
+        # Verify that output files were created in directories with special characters
+        output_root = list(output_path.keys())[0]
+        for special_dir in special_dirs:
+            output_file = os.path.join(output_root, special_dir, "output.txt")
+            assert os.path.exists(output_file), f"Output file missing for directory: {special_dir}"
+            
+            with open(output_file, "r") as f:
+                content = f.read().strip()
+                assert f"Processed {special_dir}" in content, f"Unexpected content in {special_dir}/output.txt: {content}"
+
+        LOG.info("Successfully processed job attachments with special characters in paths")

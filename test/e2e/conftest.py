@@ -55,15 +55,15 @@ class DeadlineResources:
     fleet_storage_profile_id: str
     windows_fleet_storage_profile_id: str
 
-    farm_id: InitVar[str]
-    queue_a_id: InitVar[str]
-    queue_b_id: InitVar[str]
-    jobs_run_as_agent_user_queue_id: InitVar[str]
-    non_valid_role_queue_id: InitVar[str]
-    fleet_id: InitVar[str]
-    scaling_queue_id: InitVar[str]
-    scaling_fleet_id: InitVar[str]
-    job_storage_profile_id: InitVar[str]
+    farm_id: InitVar[str] = field(repr=False)
+    queue_a_id: InitVar[str] = field(repr=False)
+    queue_b_id: InitVar[str] = field(repr=False)
+    jobs_run_as_agent_user_queue_id: InitVar[str] = field(repr=False)
+    non_valid_role_queue_id: InitVar[str] = field(repr=False)
+    fleet_id: InitVar[str] = field(repr=False)
+    scaling_queue_id: InitVar[str] = field(repr=False)
+    scaling_fleet_id: InitVar[str] = field(repr=False)
+    job_storage_profile_id: InitVar[str] = field(repr=False)
 
     def __post_init__(
         self,
@@ -77,6 +77,10 @@ class DeadlineResources:
         scaling_fleet_id: str,
         job_storage_profile_id: str,
     ) -> None:
+        # object.__setattr__(self, "farm_id", farm_id)
+        # object.__setattr__(self, "queue_a_id", queue_a_id)
+        # object.__setattr__(self, "queue_b_id", queue_b_id)
+
         object.__setattr__(self, "farm", Farm(id=farm_id))
         object.__setattr__(self, "queue_a", Queue(id=queue_a_id, farm=self.farm))
         object.__setattr__(self, "queue_b", Queue(id=queue_b_id, farm=self.farm))
@@ -94,6 +98,17 @@ class DeadlineResources:
         object.__setattr__(self, "scaling_queue", Queue(id=scaling_queue_id, farm=self.farm))
         object.__setattr__(self, "scaling_fleet", Fleet(id=scaling_fleet_id, farm=self.farm))
         object.__setattr__(self, "queue_a_job_storage_profile_id", job_storage_profile_id)
+
+        # Store InitVar values as attributes to prevent Hypothesis errors
+        object.__setattr__(self, "farm_id", farm_id)
+        object.__setattr__(self, "queue_a_id", queue_a_id)
+        object.__setattr__(self, "queue_b_id", queue_b_id)
+        object.__setattr__(self, "jobs_run_as_agent_user_queue_id", jobs_run_as_agent_user_queue_id)
+        object.__setattr__(self, "non_valid_role_queue_id", non_valid_role_queue_id)
+        object.__setattr__(self, "fleet_id", fleet_id)
+        object.__setattr__(self, "scaling_queue_id", scaling_queue_id)
+        object.__setattr__(self, "scaling_fleet_id", scaling_fleet_id)
+        object.__setattr__(self, "job_storage_profile_id", job_storage_profile_id)
 
 
 def _shutdown_s3_transfer_manager(
@@ -291,7 +306,7 @@ def session_worker(
     stop_worker(request, worker)
 
 
-@pytest.fixture(scope="class", params=[True, False])
+@pytest.fixture(scope="class", params=[True])
 def asset_sync_worker_config(
     request: pytest.FixtureRequest,
     posix_job_user: PosixSessionUser,

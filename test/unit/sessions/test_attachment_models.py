@@ -845,3 +845,443 @@ class TestWorkerManifestProperties:
         # Should be different objects
         assert result is not manifest_props.outputRelativeDirectories
         mock_get_host_format.assert_called_once()
+
+    # Edge case tests for path conversion with special characters
+    @patch("deadline_worker_agent.sessions.attachment_models.PathFormat.get_host_path_format")
+    def test_local_output_relative_directories_special_characters_preserved(
+        self, mock_get_host_format
+    ):
+        """Test that special characters are preserved during path conversion."""
+        # GIVEN
+        mock_get_host_format.return_value = PathFormat.POSIX
+        test_cases = [
+            "output[test]",
+            "output{data}",
+            "output*files",
+            "output?dir",
+            "folder with spaces[brackets]",
+        ]
+
+        for output_dir in test_cases:
+            manifest_props = ManifestProperties(
+                rootPath="/test/root",
+                rootPathFormat=PathFormat.POSIX,
+                outputRelativeDirectories=[output_dir],
+            )
+
+            worker_props = WorkerManifestProperties(
+                manifest_properties=manifest_props, local_root_path="/local/root"
+            )
+
+            # WHEN
+            result = worker_props.local_output_relative_directories()
+
+            # THEN
+            assert result == [output_dir], f"Special chars not preserved: {output_dir} -> {result}"
+
+    @patch("deadline_worker_agent.sessions.attachment_models.PathFormat.get_host_path_format")
+    def test_local_output_relative_directories_windows_to_posix_with_special_chars(
+        self, mock_get_host_format
+    ):
+        """Test Windows to POSIX conversion preserves special characters."""
+        # GIVEN
+        mock_get_host_format.return_value = PathFormat.POSIX
+        test_cases = [
+            ("output[test]", "output[test]"),
+            ("folder\\subfolder[data]", "folder/subfolder[data]"),
+            ("..\\..\\output[brackets]", "../../output[brackets]"),
+            ("temp\\output{data}*files", "temp/output{data}*files"),
+        ]
+
+        for windows_path, expected_posix in test_cases:
+            manifest_props = ManifestProperties(
+                rootPath="C:\\test\\root",
+                rootPathFormat=PathFormat.WINDOWS,
+                outputRelativeDirectories=[windows_path],
+            )
+
+            worker_props = WorkerManifestProperties(
+                manifest_properties=manifest_props, local_root_path="/local/root"
+            )
+
+            # WHEN
+            result = worker_props.local_output_relative_directories()
+
+            # THEN
+            assert result == [expected_posix], f"Windows->POSIX failed: {windows_path} -> {result}"
+
+    @patch("deadline_worker_agent.sessions.attachment_models.PathFormat.get_host_path_format")
+    def test_local_output_relative_directories_mixed_separators_with_special_chars(
+        self, mock_get_host_format
+    ):
+        """Test paths with mixed separators and special characters."""
+        # GIVEN
+        mock_get_host_format.return_value = PathFormat.POSIX
+        test_cases = [
+            "folder\\subfolder/output[data]",
+            "folder/subfolder\\output{test}",
+            "..\\../mixed[path]*files",
+        ]
+
+        for mixed_path in test_cases:
+            manifest_props = ManifestProperties(
+                rootPath="/test/root",
+                rootPathFormat=PathFormat.POSIX,
+                outputRelativeDirectories=[mixed_path],
+            )
+
+            worker_props = WorkerManifestProperties(
+                manifest_properties=manifest_props, local_root_path="/local/root"
+            )
+
+            # WHEN
+            result = worker_props.local_output_relative_directories()
+
+            # THEN
+            assert result is not None
+            assert len(result) == 1
+            # Should preserve special chars even with mixed separators
+            assert any(char in result[0] for char in "[]{}*?"), (
+                f"Special chars lost: {mixed_path} -> {result}"
+            )
+
+    @patch("deadline_worker_agent.sessions.attachment_models.PathFormat.get_host_path_format")
+    def test_local_output_relative_directories_unicode_with_special_chars(
+        self, mock_get_host_format
+    ):
+        """Test Unicode characters combined with special characters."""
+        # GIVEN
+        mock_get_host_format.return_value = PathFormat.POSIX
+        test_cases = [
+            "输出目录[测试]",
+            "フォルダ{データ}",
+            "папка[тест]*файлы",
+            "مجلد[اختبار]",
+        ]
+
+        for unicode_path in test_cases:
+            manifest_props = ManifestProperties(
+                rootPath="/test/root",
+                rootPathFormat=PathFormat.POSIX,
+                outputRelativeDirectories=[unicode_path],
+            )
+
+            worker_props = WorkerManifestProperties(
+                manifest_properties=manifest_props, local_root_path="/local/root"
+            )
+
+            # WHEN
+            result = worker_props.local_output_relative_directories()
+
+            # THEN
+            assert result == [unicode_path], (
+                f"Unicode+special chars failed: {unicode_path} -> {result}"
+            )
+
+    @patch("deadline_worker_agent.sessions.attachment_models.PathFormat.get_host_path_format")
+    def test_local_output_relative_directories_edge_case_paths(self, mock_get_host_format):
+        """Test empty paths and edge cases."""
+        # GIVEN
+        mock_get_host_format.return_value = PathFormat.POSIX
+        test_cases = [
+            "",
+            ".",
+            "..",
+            "[empty]",
+            "{empty}",
+            "*",
+            "?",
+            "output[test]{data}*files?dir",  # Multiple special chars
+        ]
+
+        for edge_path in test_cases:
+            manifest_props = ManifestProperties(
+                rootPath="/test/root",
+                rootPathFormat=PathFormat.POSIX,
+                outputRelativeDirectories=[edge_path],
+            )
+
+            worker_props = WorkerManifestProperties(
+                manifest_properties=manifest_props, local_root_path="/local/root"
+            )
+
+            # WHEN
+            result = worker_props.local_output_relative_directories()
+
+            # THEN
+            assert result is not None
+            assert len(result) == 1, f"Edge case path failed: {edge_path} -> {result}"
+
+    @patch("deadline_worker_agent.sessions.attachment_models.PathFormat.get_host_path_format")
+    def test_local_output_relative_directories_case_sensitivity_preserved(
+        self, mock_get_host_format
+    ):
+        """Test that case sensitivity is preserved across platforms."""
+        # GIVEN
+        mock_get_host_format.return_value = PathFormat.POSIX
+        test_cases = [
+            "Output[Data]",
+            "output[data]",
+            "OUTPUT[DATA]",
+            "MixedCase[Test]{Data}",
+        ]
+
+        for case_path in test_cases:
+            manifest_props = ManifestProperties(
+                rootPath="/test/root",
+                rootPathFormat=PathFormat.POSIX,
+                outputRelativeDirectories=[case_path],
+            )
+
+            worker_props = WorkerManifestProperties(
+                manifest_properties=manifest_props, local_root_path="/local/root"
+            )
+
+            # WHEN
+            result = worker_props.local_output_relative_directories()
+
+            # THEN
+            assert result == [case_path], f"Case not preserved: {case_path} -> {result}"
+
+    @patch("deadline_worker_agent.sessions.attachment_models.PathFormat.get_host_path_format")
+    def test_local_output_relative_directories_long_paths_with_special_chars(
+        self, mock_get_host_format
+    ):
+        """Test very long paths with special characters."""
+        # GIVEN
+        mock_get_host_format.return_value = PathFormat.POSIX
+        long_segment = "very_long_directory_name_with_special_chars[test]{data}*files"
+        long_path = "/".join([long_segment] * 5)  # Create long path
+
+        manifest_props = ManifestProperties(
+            rootPath="/test/root",
+            rootPathFormat=PathFormat.POSIX,
+            outputRelativeDirectories=[long_path],
+        )
+
+        worker_props = WorkerManifestProperties(
+            manifest_properties=manifest_props, local_root_path="/local/root"
+        )
+
+        # WHEN
+        result = worker_props.local_output_relative_directories()
+
+        # THEN
+        assert result is not None
+        assert len(result) == 1
+        # Verify special chars are preserved in long paths
+        assert "[test]" in result[0]
+        assert "{data}" in result[0]
+        assert "*files" in result[0]
+
+
+class TestWorkerManifestPropertiesPathHandlingVulnerabilities:
+    """Additional test cases to discover path handling vulnerabilities."""
+
+    def test_path_format_conversion_missing_else_case(self):
+        """Test behavior when source_path_format is neither WINDOWS nor POSIX."""
+        manifest_props = ManifestProperties(
+            rootPath="/test/path",
+            rootPathFormat=PathFormat.POSIX,
+            outputRelativeDirectories=["subdir"],
+        )
+
+        # Mock an unknown format by patching the enum value
+        with patch.object(manifest_props, "rootPathFormat", "UNKNOWN_FORMAT"):
+            worker_props = WorkerManifestProperties(manifest_props, "/local/root")
+
+            # This should handle unknown formats gracefully
+            result = worker_props.local_output_relative_directories()
+            assert result == ["subdir"]  # Should return unchanged
+
+    def test_unicode_metadata_size_limits(self):
+        """Test S3 metadata with very long Unicode paths."""
+        # S3 metadata has size limits - test with long Unicode path
+        long_unicode_path = "测试路径" * 1000  # Very long Chinese path
+
+        manifest_props = ManifestProperties(
+            rootPath=long_unicode_path, rootPathFormat=PathFormat.POSIX
+        )
+        worker_props = WorkerManifestProperties(manifest_props, "/local/root")
+
+        metadata = worker_props.as_output_metadata()
+        # Should handle long paths without crashing
+        assert "Metadata" in metadata
+
+    def test_metadata_inconsistency_with_non_ascii(self):
+        """Test that non-ASCII paths create inconsistent metadata."""
+        unicode_path = "/测试/路径"
+
+        manifest_props = ManifestProperties(rootPath=unicode_path, rootPathFormat=PathFormat.POSIX)
+        worker_props = WorkerManifestProperties(manifest_props, "/local/root")
+
+        metadata = worker_props.as_output_metadata()["Metadata"]
+
+        # Both fields should exist for non-ASCII paths
+        assert "asset-root" in metadata
+        assert "asset-root-json" in metadata
+
+        # asset-root should contain JSON string, not original path
+        assert metadata["asset-root"] == metadata["asset-root-json"]
+        assert metadata["asset-root"].startswith('"')  # JSON encoded
+
+    def test_hash_collision_potential(self):
+        """Test hash collision scenarios with path concatenation."""
+        # These could potentially create the same hash
+        test_cases = [
+            ("", "/path/to/file"),
+            ("/path", "/to/file"),
+            ("/path/to", "/file"),
+        ]
+
+        hashes = []
+        for fs_location, root_path in test_cases:
+            manifest_props = ManifestProperties(
+                rootPath=root_path,
+                rootPathFormat=PathFormat.POSIX,
+                fileSystemLocationName=fs_location,
+            )
+            worker_props = WorkerManifestProperties(manifest_props, "/local/root")
+            hash_val = worker_props.get_hashed_source_path()
+            hashes.append(hash_val)
+
+        # All hashes should be different
+        assert len(set(hashes)) == len(hashes), "Hash collision detected"
+
+    def test_path_traversal_in_deserialization(self):
+        """Test deserialization with directory traversal sequences."""
+        malicious_paths = [
+            "../../../etc/passwd",
+            "..\\..\\..\\windows\\system32",
+            "/test/../../../sensitive",
+            "C:\\test\\..\\..\\..\\sensitive",
+        ]
+
+        for malicious_path in malicious_paths:
+            data = {
+                "manifestProperties": {"rootPath": malicious_path, "rootPathFormat": "posix"},
+                "localRootPath": "/local/root",
+            }
+
+            # Should either reject or sanitize malicious paths
+            worker_props = WorkerManifestProperties.from_dict(data)
+            # Test that the path doesn't escape intended boundaries
+            assert not worker_props.root_path.startswith("/etc/")
+            assert not worker_props.root_path.startswith("C:\\Windows\\")
+
+    def test_null_byte_injection(self):
+        """Test paths containing null bytes that could cause issues."""
+        null_byte_path = "/test/path\x00/malicious"
+
+        manifest_props = ManifestProperties(
+            rootPath=null_byte_path, rootPathFormat=PathFormat.POSIX
+        )
+        worker_props = WorkerManifestProperties(manifest_props, "/local/root")
+
+        # Should handle null bytes safely
+        metadata = worker_props.as_output_metadata()
+        assert "Metadata" in metadata
+
+    def test_extremely_long_paths(self):
+        """Test with paths exceeding filesystem limits."""
+        # Most filesystems have path length limits (e.g., 4096 chars on Linux)
+        very_long_path = "/test/" + "a" * 5000
+
+        manifest_props = ManifestProperties(
+            rootPath=very_long_path, rootPathFormat=PathFormat.POSIX
+        )
+        worker_props = WorkerManifestProperties(manifest_props, "/local/root")
+
+        # Should handle long paths without crashing
+        result = worker_props.local_output_relative_directories()
+        # Should not crash on path operations
+
+    def test_special_characters_in_path_conversion(self):
+        """Test path conversion with glob metacharacters and special chars."""
+        test_cases = [
+            "[Julia] Project Aura",  # Square brackets
+            "Project*Wildcard",  # Asterisk
+            "Project?Question",  # Question mark
+            "Project{Brace}",  # Curly braces
+            "Project (Parens)",  # Parentheses
+            "Project$Dollar",  # Dollar sign
+            "Project^Caret",  # Caret
+            "Project|Pipe",  # Pipe
+        ]
+
+        for test_dir in test_cases:
+            manifest_props = ManifestProperties(
+                rootPath="/test/path",
+                rootPathFormat=PathFormat.POSIX,
+                outputRelativeDirectories=[test_dir],
+            )
+            worker_props = WorkerManifestProperties(manifest_props, "/local/root")
+
+            result = worker_props.local_output_relative_directories()
+            assert result == [test_dir], f"Failed for directory: {test_dir}"
+
+    def test_json_encoding_edge_cases(self):
+        """Test JSON encoding with problematic characters."""
+        problematic_paths = [
+            '/path/with"quotes',
+            "/path/with\\backslashes",
+            "/path/with\nNewlines",
+            "/path/with\tTabs",
+            "/path/with\r\nCRLF",
+            "/path/with\x00NullBytes",
+        ]
+
+        for path in problematic_paths:
+            manifest_props = ManifestProperties(rootPath=path, rootPathFormat=PathFormat.POSIX)
+            worker_props = WorkerManifestProperties(manifest_props, "/local/root")
+
+            # Should handle problematic characters in JSON encoding
+            metadata = worker_props.as_output_metadata()
+            assert "Metadata" in metadata
+
+    def test_empty_and_whitespace_paths(self):
+        """Test handling of empty and whitespace-only paths."""
+        edge_case_paths = [
+            "",
+            " ",
+            "\t",
+            "\n",
+            "   ",
+            "\t\n\r",
+        ]
+
+        for path in edge_case_paths:
+            manifest_props = ManifestProperties(rootPath=path, rootPathFormat=PathFormat.POSIX)
+            worker_props = WorkerManifestProperties(manifest_props, "/local/root")
+
+            # Should handle edge cases gracefully
+            metadata = worker_props.as_output_metadata()
+            assert "Metadata" in metadata
+
+            hash_val = worker_props.get_hashed_source_path()
+            assert isinstance(hash_val, str)
+
+    def test_path_injection_in_hash_generation(self):
+        """Test path injection vulnerabilities in hash generation."""
+        # Test cases where concatenation could be exploited
+        injection_cases = [
+            ("malicious", ""),  # fs_location with empty root_path
+            ("", "malicious"),  # empty fs_location with root_path
+            ("path1", "path2"),  # normal case
+            ("path", "1path2"),  # potential collision with "path1" + "path2"
+        ]
+
+        hashes = []
+        for fs_location, root_path in injection_cases:
+            manifest_props = ManifestProperties(
+                rootPath=root_path,
+                rootPathFormat=PathFormat.POSIX,
+                fileSystemLocationName=fs_location,
+            )
+            worker_props = WorkerManifestProperties(manifest_props, "/local/root")
+            hash_val = worker_props.get_hashed_source_path()
+            hashes.append((fs_location, root_path, hash_val))
+
+        # Verify no unexpected hash collisions
+        hash_values = [h[2] for h in hashes]
+        assert len(set(hash_values)) == len(hash_values), f"Unexpected hash collision: {hashes}"

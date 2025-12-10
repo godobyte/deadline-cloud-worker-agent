@@ -45,6 +45,12 @@ class DeadlineClient:
     def __init__(self, real_client: Any):
         self._real_client = real_client
 
+    def __getattr__(self, name):
+        """Intercept Hypothesis pretty-printing attempts"""
+        if name in ("_repr_pretty_", "__pretty__"):
+            return lambda *args, **kwargs: "DeadlineClient(...)"
+        return getattr(self._real_client, name)
+
     def create_worker(
         self,
         farmId: str,
